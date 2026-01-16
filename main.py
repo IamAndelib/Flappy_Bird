@@ -2,8 +2,8 @@ import pygame
 import random
 from pygame.locals import *
 
+pygame.mixer.pre_init(48000, -16, 2, 4096)
 pygame.init()
-pygame.mixer.init()
 
 clock = pygame.time.Clock()
 fps = 60
@@ -15,17 +15,17 @@ screen = pygame.display.set_mode((screen_width, screen_height))
 pygame.display.set_caption("Flappy Bird")
 
 # define font
-font = pygame.font.SysFont('PixelifySans', 60)
-font.set_bold(True)
+font = pygame.font.Font('04B_19.ttf', 60)
 
 # define color
 white = (255, 255, 255)
+black = (0, 0, 0)
 
 # game variables
 ground_scroll = 0
 bg_scroll = 0
-scroll_speed = 4
-bg_scroll_speed = 1
+scroll_speed = 240 # Pixels per second (4 * 60)
+bg_scroll_speed = 60
 start = False
 game_over = False
 pipe_gap = 150
@@ -36,10 +36,33 @@ pass_pipe = False
 hit_played = False
 die_played = False
 
+# Load high score
+try:
+    with open('highscore.txt', 'r') as f:
+        high_score = int(f.read())
+except:
+    high_score = 0
+
+# Cache for score rendering
+def render_score(score_val):
+    text = str(score_val)
+    main_surf = font.render(text, True, white)
+    shadow_surf = font.render(text, True, black)
+    w, h = main_surf.get_size()
+    surf = pygame.Surface((w + 4, h + 4), pygame.SRCALPHA)
+    surf.blit(shadow_surf, (2, 2))
+    surf.blit(main_surf, (0, 0))
+    return surf
+
+score_surface = render_score(score)
+score_rect = score_surface.get_rect(center=(screen_width // 2, 50))
+
 # load_images
 bg = pygame.image.load('img/bg.png').convert()
 ground = pygame.image.load('img/ground.png').convert()
-button = pygame.image.load('img/restart.png').convert()
+button_img = pygame.image.load('img/restart.png').convert()
+pipe_img = pygame.image.load('img/pipe.png').convert_alpha()
+pipe_img_flipped = pygame.transform.flip(pipe_img, False, True)
 
 # load sounds
 flap_fx = pygame.mixer.Sound('audio/sfx_wing.wav')
@@ -59,83 +82,84 @@ def draw_text(text, font, text_color, x, y):
 
 
 def reset_game():
+    global score, score_surface, score_rect, start, hit_played, die_played, pass_pipe, last_pipe
     pipe_group.empty()
     flappy.rect.x = 100
-    flappy.rect.y = int(screen_height / 2)
+    flappy.rect.y = screen_height / 2
     flappy.vel = 0
     score = 0
-    global start, hit_played, die_played
+    score_surface = render_score(score)
+    score_rect = score_surface.get_rect(center=(screen_width // 2, 50))
+    pass_pipe = False
+    last_pipe = pygame.time.get_ticks() - pipe_freq
     start = False
     hit_played = False
     die_played = False
     return score
-
-
 class Bird(pygame.sprite.Sprite):
     def __init__(self, x, y):
         pygame.sprite.Sprite.__init__(self)
         self.images = []
+        self.masks = [] # Store masks for each frame
         self.index = 0
-        self.counter = 0
+        self.animation_timer = 0
+        self.flap_speed = 0.1
         for num in range(1, 4):
             img = pygame.image.load(f'img/bird{num}.png').convert_alpha()
             self.images.append(img)
+            self.masks.append(pygame.mask.from_surface(img))
         self.image = self.images[self.index]
-        self.rect = self.image.get_rect()
+        self.mask = self.masks[self.index]
+        self.rect = self.image.get_frect()
         self.rect.center = [x, y]
         self.vel = 0
+        self.rotation_cache = {}
+        self.mask_cache = {} # Cache masks for rotated versions
 
-    def update(self):
-
+    def update(self, dt):
         # gravity
         if start == True:
-            self.vel += 0.5
-            if self.vel > 8:
-                self.vel = 8
+            self.vel += 30 * dt
+            if self.vel > 15:
+                self.vel = 15
             if self.rect.bottom < 768:
-                self.rect.y += int(self.vel)
+                self.rect.y += self.vel
 
         if game_over == False:
-            # animation
-            self.counter += 1
-            flap_cooldown = 10
-
-            if self.counter > flap_cooldown:
-                self.counter = 0
-                self.index += 1
-                if self.index >= len(self.images):
-                    self.index = 0
-            self.image = self.images[self.index]
-
-            # jump
-            for event in event_list:
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_SPACE:
-                        self.vel = -10
-                        flap_fx.play()
-
-            # rotate the bird
-            self.image = pygame.transform.rotate(
-                self.images[self.index], self.vel * -2)
+            # animation (time-based)
+            self.animation_timer += dt
+            if self.animation_timer > self.flap_speed:
+                self.animation_timer = 0
+                self.index = (self.index + 1) % len(self.images)
+            
+            # rotate the bird with caching
+            angle = int(self.vel * -3)
+            cache_key = (self.index, angle)
+            if cache_key not in self.rotation_cache:
+                rotated_img = pygame.transform.rotate(self.images[self.index], angle)
+                self.rotation_cache[cache_key] = rotated_img
+                self.mask_cache[cache_key] = pygame.mask.from_surface(rotated_img)
+            
+            self.image = self.rotation_cache[cache_key]
+            self.mask = self.mask_cache[cache_key]
         else:
-            self.image = pygame.transform.rotate(
-                self.images[self.index], -90)
-
+            self.image = pygame.transform.rotate(self.images[self.index], -90)
+            self.mask = pygame.mask.from_surface(self.image)
 
 class Pipe(pygame.sprite.Sprite):
-    def __init__(self, x, y, position):
+    def __init__(self, x, y, position, image):
         pygame.sprite.Sprite.__init__(self)
-        self.image = pygame.image.load('img/pipe.png').convert_alpha()
-        self.rect = self.image.get_rect()
+        self.image = image
+        self.rect = self.image.get_frect()
         # pipe position
         if position == 1:
-            self.image = pygame.transform.flip(self.image, False, True)
-            self.rect.bottomleft = [x, y - int(pipe_gap / 2)]
+            self.rect.bottomleft = [x, y - pipe_gap / 2]
         if position == -1:
-            self.rect.topleft = [x, y + int(pipe_gap / 2)]
+            self.rect.topleft = [x, y + pipe_gap / 2]
+        self.mask = pygame.mask.from_surface(self.image)
 
-    def update(self):
-        self.rect.x -= scroll_speed
+    def update(self, dt):
+        self.rect.x -= scroll_speed * dt
         if self.rect.right < 0:
             self.kill()
 
@@ -175,7 +199,7 @@ flappy = Bird(100, int(screen_height / 2))
 bird_group.add(flappy)
 
 # restart game
-button = Button(screen_width // 2 - 50, screen_height // 2 - 100, button)
+button = Button(screen_width // 2 - 50, screen_height // 2 - 100, button_img)
 
 run = True
 restart_delay = 0
@@ -184,7 +208,8 @@ while run:
 
     event_list = pygame.event.get()
 
-    clock.tick(fps)
+    # Calculate delta time (dt) in seconds
+    dt = clock.tick(fps) / 1000.0
 
     # background
     screen.blit(bg, (bg_scroll, 0))
@@ -192,7 +217,7 @@ while run:
 
     pipe_group.draw(screen)
     bird_group.draw(screen)
-    bird_group.update()
+    bird_group.update(dt)
 
     # draw ground
     screen.blit(ground, (ground_scroll, 768))
@@ -204,10 +229,18 @@ while run:
         if pass_pipe == True:
             if bird_group.sprites()[0].rect.left > pipe_group.sprites()[0].rect.right:
                 score += 1
+                score_surface = render_score(score)
+                score_rect = score_surface.get_rect(center=(screen_width // 2, 50))
                 pass_pipe = False
                 point_fx.play()
 
-    draw_text(str(score), font, white, int(screen_width / 2), 20)
+    # Draw cached score
+    screen.blit(score_surface, score_rect)
+
+    if game_over:
+        high_score_surf = font.render(f'HIGH SCORE: {high_score}', True, (200, 200, 200))
+        high_score_rect = high_score_surf.get_rect(center=(screen_width // 2, 120))
+        screen.blit(high_score_surf, high_score_rect)
 
     # ground collision check
     if flappy.rect.bottom >= 768:
@@ -216,37 +249,47 @@ while run:
             die_fx.play()
             die_played = True
             pygame.mixer.music.stop()
+            # Update high score
+            if score > high_score:
+                high_score = score
+                with open('highscore.txt', 'w') as f:
+                    f.write(str(high_score))
 
-    # pipe collision check
-    if pygame.sprite.groupcollide(bird_group, pipe_group, False, False) or flappy.rect.top < 0:
+    # pipe collision check with masks
+    if pygame.sprite.groupcollide(bird_group, pipe_group, False, False, pygame.sprite.collide_mask) or flappy.rect.top < 0:
         game_over = True
         if hit_played == False:
             hit_fx.play()
             hit_played = True
             pygame.mixer.music.stop()
+            # Update high score
+            if score > high_score:
+                high_score = score
+                with open('highscore.txt', 'w') as f:
+                    f.write(str(high_score))
 
     # draw and scroll the ground
     if game_over == False and start == True:
         # scroll ground
-        ground_scroll -= scroll_speed
+        ground_scroll -= scroll_speed * dt
         if abs(ground_scroll) > 35:
             ground_scroll = 0
 
         # scroll background (parallax)
-        bg_scroll -= bg_scroll_speed
+        bg_scroll -= bg_scroll_speed * dt
         if abs(bg_scroll) > screen_width:
             bg_scroll = 0
 
-        pipe_group.update()
+        pipe_group.update(dt)
 
         # new pipes
         time_now = pygame.time.get_ticks()
         if time_now - last_pipe > pipe_freq:
             pipe_height = random.randint(-100, 100)
             btm_pipe = Pipe(screen_width, int(
-                screen_height / 2) + pipe_height, -1)
+                screen_height / 2) + pipe_height, -1, pipe_img)
             top_pipe = Pipe(screen_width, int(
-                screen_height / 2) + pipe_height, 1)
+                screen_height / 2) + pipe_height, 1, pipe_img_flipped)
             pipe_group.add(btm_pipe)
             pipe_group.add(top_pipe)
             last_pipe = time_now
@@ -275,9 +318,15 @@ while run:
                     start = True
                     swoosh_fx.play()
                     pygame.mixer.music.play(-1)
-                elif game_over == True and restart_delay == 0:
+                
+                # Jump logic (only if game is active)
+                if start == True and game_over == False:
+                    flappy.vel = -8
+                    flap_fx.play()
+                
+                if game_over == True and restart_delay == 0:
                     restart_delay = 10  # Show press effect for 10 frames
 
-    pygame.display.update()
+    pygame.display.flip()
 
 pygame.quit()
