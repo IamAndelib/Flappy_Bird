@@ -23,7 +23,9 @@ white = (255, 255, 255)
 
 # game variables
 ground_scroll = 0
+bg_scroll = 0
 scroll_speed = 4
+bg_scroll_speed = 1
 start = False
 game_over = False
 pipe_gap = 150
@@ -185,7 +187,8 @@ while run:
     clock.tick(fps)
 
     # background
-    screen.blit(bg, (0, 0))
+    screen.blit(bg, (bg_scroll, 0))
+    screen.blit(bg, (bg_scroll + screen_width, 0))
 
     pipe_group.draw(screen)
     bird_group.draw(screen)
@@ -228,6 +231,12 @@ while run:
         ground_scroll -= scroll_speed
         if abs(ground_scroll) > 35:
             ground_scroll = 0
+        
+        # scroll background (parallax)
+        bg_scroll -= bg_scroll_speed
+        if abs(bg_scroll) > screen_width:
+            bg_scroll = 0
+            
         pipe_group.update()
 
         # new pipes
