@@ -34,11 +34,20 @@ pass_pipe = False
 # load_images
 bg = pygame.image.load('img/bg.png')
 ground = pygame.image.load('img/ground.png')
+button = pygame.image.load('img/restart.png')
 
 
 def draw_text(text, font, text_color, x, y):
     img = font.render(text, True, text_color)
     screen.blit(img, (x, y))
+
+
+def reset_game():
+    pipe_group.empty()
+    flappy.rect.x = 100
+    flappy.rect.y = int(screen_height / 2)
+    score = 0
+    return score
 
 
 class Bird(pygame.sprite.Sprite):
@@ -65,7 +74,7 @@ class Bird(pygame.sprite.Sprite):
             if self.rect.bottom < 768:
                 self.rect.y += int(self.vel)
 
-                # animation
+            # animation
             self.counter += 1
             flap_cooldown = 10
 
@@ -109,11 +118,38 @@ class Pipe(pygame.sprite.Sprite):
             self.kill()
 
 
+class Button():
+    def __init__(self, x, y, image):
+        self.image = image
+        self.rect = self.image.get_rect()
+        self.rect.topleft = (x, y)
+
+    def draw(self):
+
+        reset = False
+
+        # mouse position
+        position = pygame.mouse.get_pos()
+
+        # check if mouse is over the button
+        if self.rect.collidepoint(position):
+            if pygame.mouse.get_pressed()[0] == 1:
+                reset = True
+
+                # draw button
+        screen.blit(self.image, (self.rect.x, self.rect.y))
+
+        return reset
+
+
 bird_group = pygame.sprite.Group()
 pipe_group = pygame.sprite.Group()
 
 flappy = Bird(100, int(screen_height / 2))
 bird_group.add(flappy)
+
+# restart game
+button = Button(screen_width // 2 - 50, screen_height // 2 - 100, button)
 
 run = True
 while run:
@@ -171,10 +207,16 @@ while run:
             pipe_group.add(top_pipe)
             last_pipe = time_now
 
+    # Check game over
+    if game_over == True:
+        if button.draw() == True:
+            game_over = False
+            score = reset_game()
+
     for event in event_list:
         if event.type == pygame.QUIT:
             run = False
-        if event.type == pygame.KEYDOWN and start == False:
+        if event.type == pygame.KEYDOWN and start == False and game_over == False:
             if event.key == pygame.K_SPACE:
                 start = True
 
