@@ -3,6 +3,7 @@ import random
 from pygame.locals import *
 
 pygame.init()
+pygame.mixer.init()
 
 clock = pygame.time.Clock()
 fps = 60
@@ -30,11 +31,24 @@ pipe_freq = 1500  # ms
 last_pipe = pygame.time.get_ticks() - pipe_freq
 score = 0
 pass_pipe = False
+hit_played = False
+die_played = False
 
 # load_images
 bg = pygame.image.load('img/bg.png')
 ground = pygame.image.load('img/ground.png')
 button = pygame.image.load('img/restart.png')
+
+# load sounds
+flap_fx = pygame.mixer.Sound('audio/sfx_wing.wav')
+hit_fx = pygame.mixer.Sound('audio/sfx_hit.wav')
+point_fx = pygame.mixer.Sound('audio/sfx_point.wav')
+die_fx = pygame.mixer.Sound('audio/sfx_die.wav')
+swoosh_fx = pygame.mixer.Sound('audio/sfx_swooshing.wav')
+
+# load background music
+pygame.mixer.music.load('audio/bg_music.mp3')
+pygame.mixer.music.set_volume(0.5)
 
 
 def draw_text(text, font, text_color, x, y):
@@ -48,8 +62,10 @@ def reset_game():
     flappy.rect.y = int(screen_height / 2)
     flappy.vel = 0
     score = 0
-    global start
+    global start, hit_played, die_played
     start = False
+    hit_played = False
+    die_played = False
     return score
 
 
@@ -94,6 +110,7 @@ class Bird(pygame.sprite.Sprite):
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_SPACE:
                         self.vel = -10
+                        flap_fx.play()
 
             # rotate the bird
             self.image = pygame.transform.rotate(
@@ -131,15 +148,15 @@ class Button():
         self.hover_rect = self.hover_image.get_rect()
         self.hover_rect.center = self.rect.center
 
-    def draw(self):
+    def draw(self, forced_pressed=False):
 
         reset = False
 
         # mouse position
         position = pygame.mouse.get_pos()
 
-        # check if mouse is over the button
-        if self.rect.collidepoint(position):
+        # check if mouse is over the button or if pressed is forced
+        if self.rect.collidepoint(position) or forced_pressed:
             screen.blit(self.hover_image, self.hover_rect)
             if pygame.mouse.get_pressed()[0] == 1:
                 reset = True
@@ -159,6 +176,8 @@ bird_group.add(flappy)
 button = Button(screen_width // 2 - 50, screen_height // 2 - 100, button)
 
 run = True
+restart_delay = 0
+
 while run:
 
     event_list = pygame.event.get()
@@ -168,9 +187,9 @@ while run:
     # background
     screen.blit(bg, (0, 0))
 
+    pipe_group.draw(screen)
     bird_group.draw(screen)
     bird_group.update()
-    pipe_group.draw(screen)
 
     # draw ground
     screen.blit(ground, (ground_scroll, 768))
@@ -183,16 +202,25 @@ while run:
             if bird_group.sprites()[0].rect.left > pipe_group.sprites()[0].rect.right:
                 score += 1
                 pass_pipe = False
+                point_fx.play()
 
     draw_text(str(score), font, white, int(screen_width / 2), 20)
 
     # ground collision check
     if flappy.rect.bottom >= 768:
         game_over = True
+        if die_played == False:
+            die_fx.play()
+            die_played = True
+            pygame.mixer.music.stop()
 
     # pipe collision check
     if pygame.sprite.groupcollide(bird_group, pipe_group, False, False) or flappy.rect.top < 0:
         game_over = True
+        if hit_played == False:
+            hit_fx.play()
+            hit_played = True
+            pygame.mixer.music.stop()
 
     # draw and scroll the ground
     if game_over == False and start == True:
@@ -216,16 +244,30 @@ while run:
 
     # Check game over
     if game_over == True:
-        if button.draw() == True:
-            game_over = False
-            score = reset_game()
+        if restart_delay > 0:
+            button.draw(forced_pressed=True)
+            restart_delay -= 1
+            if restart_delay == 0:
+                game_over = False
+                score = reset_game()
+                swoosh_fx.play()
+        else:
+            if button.draw() == True:
+                game_over = False
+                score = reset_game()
+                swoosh_fx.play()
 
     for event in event_list:
         if event.type == pygame.QUIT:
             run = False
-        if event.type == pygame.KEYDOWN and start == False and game_over == False:
+        if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE:
-                start = True
+                if start == False and game_over == False:
+                    start = True
+                    swoosh_fx.play()
+                    pygame.mixer.music.play(-1)
+                elif game_over == True and restart_delay == 0:
+                    restart_delay = 10  # Show press effect for 10 frames
 
     pygame.display.update()
 
