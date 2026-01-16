@@ -20,6 +20,10 @@ font = pygame.font.Font('04B_19.ttf', 60)
 # define color
 white = (255, 255, 255)
 black = (0, 0, 0)
+red = (255, 0, 0)
+blue = (30, 80, 250) # Lighter, vibrant blue
+green = (0, 150, 0) # Dark Green
+new_record_set = False
 
 # game variables
 ground_scroll = 0
@@ -44,9 +48,9 @@ except:
     high_score = 0
 
 # Cache for score rendering
-def render_score(score_val):
+def render_score(score_val, color=white):
     text = str(score_val)
-    main_surf = font.render(text, True, white)
+    main_surf = font.render(text, True, color)
     shadow_surf = font.render(text, True, black)
     w, h = main_surf.get_size()
     surf = pygame.Surface((w + 4, h + 4), pygame.SRCALPHA)
@@ -54,7 +58,7 @@ def render_score(score_val):
     surf.blit(main_surf, (0, 0))
     return surf
 
-score_surface = render_score(score)
+score_surface = render_score(score, white)
 score_rect = score_surface.get_rect(center=(screen_width // 2, 50))
 
 # load_images
@@ -63,6 +67,10 @@ ground = pygame.image.load('img/ground.png').convert()
 button_img = pygame.image.load('img/restart.png').convert()
 pipe_img = pygame.image.load('img/pipe.png').convert_alpha()
 pipe_img_flipped = pygame.transform.flip(pipe_img, False, True)
+
+# Pre-calculate masks
+pipe_mask = pygame.mask.from_surface(pipe_img)
+pipe_mask_flipped = pygame.mask.from_surface(pipe_img_flipped)
 
 # load sounds
 flap_fx = pygame.mixer.Sound('audio/sfx_wing.wav')
@@ -76,25 +84,21 @@ pygame.mixer.music.load('audio/bg_music.mp3')
 pygame.mixer.music.set_volume(0.5)
 
 
-def draw_text(text, font, text_color, x, y):
-    img = font.render(text, True, text_color)
-    screen.blit(img, (x, y))
-
-
 def reset_game():
-    global score, score_surface, score_rect, start, hit_played, die_played, pass_pipe, last_pipe
+    global score, score_surface, score_rect, start, hit_played, die_played, pass_pipe, last_pipe, new_record_set
     pipe_group.empty()
     flappy.rect.x = 100
     flappy.rect.y = screen_height / 2
     flappy.vel = 0
     score = 0
-    score_surface = render_score(score)
+    score_surface = render_score(score, white)
     score_rect = score_surface.get_rect(center=(screen_width // 2, 50))
     pass_pipe = False
     last_pipe = pygame.time.get_ticks() - pipe_freq
     start = False
     hit_played = False
     die_played = False
+    new_record_set = False
     return score
 class Bird(pygame.sprite.Sprite):
     def __init__(self, x, y):
@@ -147,16 +151,16 @@ class Bird(pygame.sprite.Sprite):
             self.mask = pygame.mask.from_surface(self.image)
 
 class Pipe(pygame.sprite.Sprite):
-    def __init__(self, x, y, position, image):
+    def __init__(self, x, y, position, image, mask):
         pygame.sprite.Sprite.__init__(self)
         self.image = image
+        self.mask = mask
         self.rect = self.image.get_frect()
         # pipe position
         if position == 1:
             self.rect.bottomleft = [x, y - pipe_gap / 2]
         if position == -1:
             self.rect.topleft = [x, y + pipe_gap / 2]
-        self.mask = pygame.mask.from_surface(self.image)
 
     def update(self, dt):
         self.rect.x -= scroll_speed * dt
@@ -222,54 +226,47 @@ while run:
     # draw ground
     screen.blit(ground, (ground_scroll, 768))
 
-    # check score
-    if len(pipe_group) > 0:
-        if bird_group.sprites()[0].rect.left > pipe_group.sprites()[0].rect.left and bird_group.sprites()[0].rect.right < pipe_group.sprites()[0].rect.right and pass_pipe == False:
-            pass_pipe = True
-        if pass_pipe == True:
-            if bird_group.sprites()[0].rect.left > pipe_group.sprites()[0].rect.right:
-                score += 1
-                score_surface = render_score(score)
-                score_rect = score_surface.get_rect(center=(screen_width // 2, 50))
-                pass_pipe = False
-                point_fx.play()
-
-    # Draw cached score
-    screen.blit(score_surface, score_rect)
-
-    if game_over:
-        high_score_surf = font.render(f'HIGH SCORE: {high_score}', True, (200, 200, 200))
-        high_score_rect = high_score_surf.get_rect(center=(screen_width // 2, 120))
-        screen.blit(high_score_surf, high_score_rect)
-
-    # ground collision check
-    if flappy.rect.bottom >= 768:
-        game_over = True
-        if die_played == False:
-            die_fx.play()
-            die_played = True
-            pygame.mixer.music.stop()
-            # Update high score
-            if score > high_score:
-                high_score = score
-                with open('highscore.txt', 'w') as f:
-                    f.write(str(high_score))
-
-    # pipe collision check with masks
-    if pygame.sprite.groupcollide(bird_group, pipe_group, False, False, pygame.sprite.collide_mask) or flappy.rect.top < 0:
-        game_over = True
-        if hit_played == False:
-            hit_fx.play()
-            hit_played = True
-            pygame.mixer.music.stop()
-            # Update high score
-            if score > high_score:
-                high_score = score
-                with open('highscore.txt', 'w') as f:
-                    f.write(str(high_score))
-
-    # draw and scroll the ground
+    # game logic
     if game_over == False and start == True:
+        # check score
+        if len(pipe_group) > 0:
+            if bird_group.sprites()[0].rect.left > pipe_group.sprites()[0].rect.left and bird_group.sprites()[0].rect.right < pipe_group.sprites()[0].rect.right and pass_pipe == False:
+                pass_pipe = True
+            if pass_pipe == True:
+                if bird_group.sprites()[0].rect.left > pipe_group.sprites()[0].rect.right:
+                    score += 1
+                    if score > high_score:
+                        new_record_set = True
+                    color = red if new_record_set else white
+                    score_surface = render_score(score, color)
+                    score_rect = score_surface.get_rect(center=(screen_width // 2, 50))
+                    pass_pipe = False
+                    point_fx.play()
+
+        # ground collision check
+        if flappy.rect.bottom >= 768:
+            game_over = True
+            if die_played == False:
+                die_fx.play()
+                die_played = True
+                pygame.mixer.music.stop()
+                if score > high_score:
+                    high_score = score
+                    with open('highscore.txt', 'w') as f:
+                        f.write(str(high_score))
+
+        # pipe collision check with masks
+        if pygame.sprite.groupcollide(bird_group, pipe_group, False, False, pygame.sprite.collide_mask) or flappy.rect.top < 0:
+            game_over = True
+            if hit_played == False:
+                hit_fx.play()
+                hit_played = True
+                pygame.mixer.music.stop()
+                if score > high_score:
+                    high_score = score
+                    with open('highscore.txt', 'w') as f:
+                        f.write(str(high_score))
+
         # scroll ground
         ground_scroll -= scroll_speed * dt
         if abs(ground_scroll) > 35:
@@ -287,15 +284,25 @@ while run:
         if time_now - last_pipe > pipe_freq:
             pipe_height = random.randint(-100, 100)
             btm_pipe = Pipe(screen_width, int(
-                screen_height / 2) + pipe_height, -1, pipe_img)
+                screen_height / 2) + pipe_height, -1, pipe_img, pipe_mask)
             top_pipe = Pipe(screen_width, int(
-                screen_height / 2) + pipe_height, 1, pipe_img_flipped)
+                screen_height / 2) + pipe_height, 1, pipe_img_flipped, pipe_mask_flipped)
             pipe_group.add(btm_pipe)
             pipe_group.add(top_pipe)
             last_pipe = time_now
 
+    # Draw cached score
+    screen.blit(score_surface, score_rect)
+
     # Check game over
     if game_over == True:
+        if new_record_set:
+            high_score_surf = render_score(f'NEW RECORD: {score}!', green)
+        else:
+            high_score_surf = render_score(f'HIGH SCORE: {high_score}', blue)
+        high_score_rect = high_score_surf.get_rect(center=(screen_width // 2, 120))
+        screen.blit(high_score_surf, high_score_rect)
+
         if restart_delay > 0:
             button.draw(forced_pressed=True)
             restart_delay -= 1
@@ -328,5 +335,9 @@ while run:
                     restart_delay = 10  # Show press effect for 10 frames
 
     pygame.display.flip()
+
+# Reset high score upon quitting
+with open('highscore.txt', 'w') as f:
+    f.write('0')
 
 pygame.quit()
