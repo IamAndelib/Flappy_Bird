@@ -37,9 +37,9 @@ hit_played = False
 die_played = False
 
 # load_images
-bg = pygame.image.load('img/bg.png')
-ground = pygame.image.load('img/ground.png')
-button = pygame.image.load('img/restart.png')
+bg = pygame.image.load('img/bg.png').convert()
+ground = pygame.image.load('img/ground.png').convert()
+button = pygame.image.load('img/restart.png').convert()
 
 # load sounds
 flap_fx = pygame.mixer.Sound('audio/sfx_wing.wav')
@@ -78,7 +78,7 @@ class Bird(pygame.sprite.Sprite):
         self.index = 0
         self.counter = 0
         for num in range(1, 4):
-            img = pygame.image.load(f'img/bird{num}.png')
+            img = pygame.image.load(f'img/bird{num}.png').convert_alpha()
             self.images.append(img)
         self.image = self.images[self.index]
         self.rect = self.image.get_rect()
@@ -125,7 +125,7 @@ class Bird(pygame.sprite.Sprite):
 class Pipe(pygame.sprite.Sprite):
     def __init__(self, x, y, position):
         pygame.sprite.Sprite.__init__(self)
-        self.image = pygame.image.load('img/pipe.png')
+        self.image = pygame.image.load('img/pipe.png').convert_alpha()
         self.rect = self.image.get_rect()
         # pipe position
         if position == 1:
@@ -231,12 +231,12 @@ while run:
         ground_scroll -= scroll_speed
         if abs(ground_scroll) > 35:
             ground_scroll = 0
-        
+
         # scroll background (parallax)
         bg_scroll -= bg_scroll_speed
         if abs(bg_scroll) > screen_width:
             bg_scroll = 0
-            
+
         pipe_group.update()
 
         # new pipes
