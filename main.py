@@ -46,7 +46,10 @@ def reset_game():
     pipe_group.empty()
     flappy.rect.x = 100
     flappy.rect.y = int(screen_height / 2)
+    flappy.vel = 0
     score = 0
+    global start
+    start = False
     return score
 
 
@@ -74,6 +77,7 @@ class Bird(pygame.sprite.Sprite):
             if self.rect.bottom < 768:
                 self.rect.y += int(self.vel)
 
+        if game_over == False:
             # animation
             self.counter += 1
             flap_cooldown = 10
@@ -85,7 +89,6 @@ class Bird(pygame.sprite.Sprite):
                     self.index = 0
             self.image = self.images[self.index]
 
-        if game_over == False:
             # jump
             for event in event_list:
                 if event.type == pygame.KEYDOWN:
@@ -120,9 +123,13 @@ class Pipe(pygame.sprite.Sprite):
 
 class Button():
     def __init__(self, x, y, image):
-        self.image = image
-        self.rect = self.image.get_rect()
+        self.original_image = image
+        self.hover_image = pygame.transform.scale(
+            image, (int(image.get_width() * 1.1), int(image.get_height() * 1.1)))
+        self.rect = self.original_image.get_rect()
         self.rect.topleft = (x, y)
+        self.hover_rect = self.hover_image.get_rect()
+        self.hover_rect.center = self.rect.center
 
     def draw(self):
 
@@ -133,11 +140,11 @@ class Button():
 
         # check if mouse is over the button
         if self.rect.collidepoint(position):
+            screen.blit(self.hover_image, self.hover_rect)
             if pygame.mouse.get_pressed()[0] == 1:
                 reset = True
-
-                # draw button
-        screen.blit(self.image, (self.rect.x, self.rect.y))
+        else:
+            screen.blit(self.original_image, self.rect)
 
         return reset
 
