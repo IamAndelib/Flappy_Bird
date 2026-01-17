@@ -274,7 +274,10 @@ while run:
 
     if game_state == STATE_PLAYING:
         run_timer += dt
-        scale = min(run_timer / 600.0, 1.0)
+        # Asymptotic scaling: difficulty increases fast at first, then slows down as it approaches the cap (1.0).
+        # At 300s (5 mins), scale is ~0.53. At 900s (15 mins), scale is ~0.86.
+        scale = 1.0 - math.exp(-run_timer / 400.0)
+        
         current_scroll_speed = SCROLL_SPEED + scale * 120
         current_pipe_gap = PIPE_GAP - scale * 40
         current_pipe_freq = PIPE_FREQ - scale * 0.6
