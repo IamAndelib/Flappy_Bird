@@ -26,7 +26,7 @@ pygame.display.set_caption("Flappy Bird")
 font = pygame.font.Font('04B_19.ttf', 60)
 
 # Game States
-STATE_MENU, STATE_PLAYING, STATE_GAMEOVER = 0, 1, 2
+STATE_MENU, STATE_PLAYING, STATE_GAMEOVER, STATE_PAUSED = 0, 1, 2, 3
 game_state = STATE_MENU
 
 # --- Utility Functions ---
@@ -262,6 +262,7 @@ current_scroll_speed, current_bg_speed, bg_long_speed, current_pipe_gap, current
 score_surface = render_score(score)
 score_rect = score_surface.get_frect(center=(SCREEN_WIDTH//2, 50))
 menu_text_surf = render_score("PRESS SPACE TO FLAP", ORANGE)
+paused_text_surf = render_score("PAUSED", ORANGE)
 hit_played = die_played = new_record_set = False
 game_over_surf = None
 
@@ -287,8 +288,9 @@ while run:
     pipe_group.draw(render_surface)
     particle_group.draw(render_surface)
     bird_group.draw(render_surface)
-    bird_group.update(dt)
-    particle_group.update(dt)
+    if game_state != STATE_PAUSED:
+        bird_group.update(dt)
+        particle_group.update(dt)
     render_surface.blit(ground, (ground_scroll, GROUND_LEVEL))
 
     if game_state == STATE_PLAYING:
@@ -357,7 +359,7 @@ while run:
                            pipe_img_flipped, pipe_mask_flipped, random_gap, off, f))
             pipe_timer = 0
 
-    if game_state != STATE_GAMEOVER:
+    if game_state != STATE_GAMEOVER and game_state != STATE_PAUSED:
         ground_scroll = (ground_scroll - current_scroll_speed*dt) % -35
         bg_scroll = (bg_scroll - current_bg_speed*dt) % -SCREEN_WIDTH
         bg_long_scroll = (bg_long_scroll - bg_long_speed*dt) % -1280
@@ -376,6 +378,8 @@ while run:
         sm = pygame.transform.scale(menu_text_surf, (int(
             menu_text_surf.get_width()*ps), int(menu_text_surf.get_height()*ps)))
         render_surface.blit(sm, sm.get_frect(center=(SCREEN_WIDTH//2, 150)))
+    elif game_state == STATE_PAUSED:
+        render_surface.blit(paused_text_surf, paused_text_surf.get_frect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2 - 50)))
     elif game_state == STATE_GAMEOVER:
         if game_over_surf:
             render_surface.blit(game_over_surf, game_over_surf.get_frect(
@@ -402,8 +406,26 @@ while run:
 
     for e in evs:
         if e.type == QUIT: run = False
-        if e.type == KEYDOWN and e.key == K_SPACE:
-            if game_state == STATE_MENU: game_state = STATE_PLAYING; swoosh_fx.play(); music_channel.play(music_fx, loops=-1)
-            if game_state == STATE_PLAYING: flappy.vel = JUMP_STRENGTH; flap_fx.play()
+        if e.type == KEYDOWN:
+            if e.key == K_SPACE:
+                if game_state == STATE_MENU:
+                    game_state = STATE_PLAYING
+                    swoosh_fx.play()
+                    music_channel.play(music_fx, loops=-1)
+                    flappy.vel = JUMP_STRENGTH
+                    flap_fx.play()
+                elif game_state == STATE_PLAYING:
+                    flappy.vel = JUMP_STRENGTH
+                    flap_fx.play()
+                elif game_state == STATE_PAUSED:
+                    game_state = STATE_PLAYING
+                    music_channel.unpause()
+                    flappy.vel = JUMP_STRENGTH
+                    flap_fx.play()
+            if e.key == K_ESCAPE:
+                if game_state == STATE_PLAYING: game_state = STATE_PAUSED; music_channel.pause()
+                elif game_state == STATE_PAUSED: game_state = STATE_PLAYING; music_channel.unpause()
+            if e.key in (K_RETURN, K_KP_ENTER):
+                if game_state == STATE_GAMEOVER: reset_game(); swoosh_fx.play()
     pygame.display.flip()
 pygame.quit()
