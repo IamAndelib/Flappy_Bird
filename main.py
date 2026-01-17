@@ -78,8 +78,9 @@ hit_fx = pygame.mixer.Sound('audio/sfx_hit.wav')
 point_fx = pygame.mixer.Sound('audio/sfx_point.wav')
 die_fx = pygame.mixer.Sound('audio/sfx_die.wav')
 swoosh_fx = pygame.mixer.Sound('audio/sfx_swooshing.wav')
-pygame.mixer.music.load('audio/bg_music.mp3')
-pygame.mixer.music.set_volume(0.5)
+music_fx = pygame.mixer.Sound('audio/bg_music.mp3')
+music_channel = pygame.mixer.Channel(0)
+music_channel.set_volume(0.5)
 
 # High Score persistence
 try:
@@ -105,6 +106,9 @@ def reset_game():
     score_surface = render_score(score, WHITE)
     score_rect = score_surface.get_frect(center=(SCREEN_WIDTH // 2, 50))
     current_scroll_speed, current_pipe_gap, current_pipe_freq = SCROLL_SPEED, PIPE_GAP, PIPE_FREQ
+    music_channel.stop()
+    if hasattr(music_channel, "speed"):
+        music_channel.speed = 1.0
     game_state, hit_played, die_played, new_record_set, game_over_surf = STATE_MENU, False, False, False, None
 
 # --- Game Classes ---
@@ -282,8 +286,14 @@ while run:
         current_scroll_speed = SCROLL_SPEED + scale * 160
         current_pipe_gap = PIPE_GAP - scale * 55
         current_pipe_freq = PIPE_FREQ - scale * 0.75
-        current_bg_speed = BG_SCROLL_SPEED + scale * 40
-        bg_long_speed = (BG_SCROLL_SPEED / 2) + scale * 20
+        
+        # Perfect synchronization: BG speeds are now proportional to the main scroll speed
+        current_bg_speed = current_scroll_speed * 0.25      # Front BG layer (1/4 speed)
+        bg_long_speed = current_scroll_speed * 0.125       # Back BG layer (1/8 speed)
+        
+        # Sync music speed with game speed (Requires pygame-ce)
+        if hasattr(music_channel, "speed"):
+            music_channel.speed = current_scroll_speed / SCROLL_SPEED
 
         for p in pipe_group:
             if not p.scored and flappy.rect.left > p.rect.right and p.position == -1:
@@ -304,13 +314,9 @@ while run:
                     particle_group.add(
                         Particle(flappy.rect.centerx, flappy.rect.centery, WHITE))
                 shake_duration, flash_alpha, hit_played = SHAKE_DURATION, 255, True
-                if flappy.rect.bottom < GROUND_LEVEL:
-                    hit_fx.play()
-                    swoosh_fx.play()
-                die_fx.play()
-                pygame.mixer.music.stop()
-                game_over_surf = render_score(
-                    f'NEW RECORD: {score}!' if new_record_set else f'HIGH SCORE: {high_score}', GREEN if new_record_set else BLUE)
+                if flappy.rect.bottom < GROUND_LEVEL: hit_fx.play(); swoosh_fx.play()
+                die_fx.play(); music_channel.stop()
+                game_over_surf = render_score(f'NEW RECORD: {score}!' if new_record_set else f'HIGH SCORE: {high_score}', GREEN if new_record_set else BLUE)
                 if score > high_score:
                     high_score = score
                     with open('highscore.txt', 'w') as f:
@@ -372,17 +378,9 @@ while run:
     screen.blit(render_surface, (ox, oy))
 
     for e in evs:
-        if e.type == QUIT:
-            run = False
+        if e.type == QUIT: run = False
         if e.type == KEYDOWN and e.key == K_SPACE:
-            if game_state == STATE_MENU:
-                game_state = STATE_PLAYING
-                swoosh_fx.play()
-                pygame.mixer.music.play(-1)
-            if game_state == STATE_PLAYING:
-                flappy.vel = JUMP_STRENGTH
-                flap_fx.play()
-            elif game_state == STATE_GAMEOVER and restart_delay == 0:
-                restart_delay = 10
+            if game_state == STATE_MENU: game_state = STATE_PLAYING; swoosh_fx.play(); music_channel.play(music_fx, loops=-1)
+            if game_state == STATE_PLAYING: flappy.vel = JUMP_STRENGTH; flap_fx.play()
     pygame.display.flip()
 pygame.quit()
