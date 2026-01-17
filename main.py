@@ -93,11 +93,23 @@ pipe_img_flipped = pygame.transform.flip(pipe_img, False, True)
 
 # Bird Images (Pre-loaded)
 BIRD_IMAGES = [pygame.image.load(f'img/bird{i}.png').convert_alpha() for i in range(1, 4)]
-BIRD_MASKS = [pygame.mask.from_surface(img) for img in BIRD_IMAGES]
+
+def get_shrunk_mask(image, factor=0.92):
+    size = image.get_size()
+    shrunk_size = (int(size[0] * factor), int(size[1] * factor))
+    if shrunk_size[0] <= 0 or shrunk_size[1] <= 0:
+        return pygame.mask.from_surface(image)
+    shrunk_img = pygame.transform.smoothscale(image, shrunk_size)
+    shrunk_mask = pygame.mask.from_surface(shrunk_img)
+    full_mask = pygame.mask.Mask(size)
+    full_mask.draw(shrunk_mask, ((size[0] - shrunk_size[0]) // 2, (size[1] - shrunk_size[1]) // 2))
+    return full_mask
+
+BIRD_MASKS = [get_shrunk_mask(img) for img in BIRD_IMAGES]
 
 # Pre-calculate masks
-pipe_mask = pygame.mask.from_surface(pipe_img)
-pipe_mask_flipped = pygame.mask.from_surface(pipe_img_flipped)
+pipe_mask = get_shrunk_mask(pipe_img, 0.98)
+pipe_mask_flipped = get_shrunk_mask(pipe_img_flipped, 0.98)
 
 # Load Sounds
 flap_fx = pygame.mixer.Sound('audio/sfx_wing.wav')
@@ -152,12 +164,15 @@ class Bird(pygame.sprite.Sprite):
         self.mask_cache = {}
 
     def update(self, dt):
-        if game_state == STATE_PLAYING:
+        if game_state != STATE_MENU:
             self.vel += GRAVITY * dt
             if self.vel > 15:
                 self.vel = 15
             if self.rect.bottom < GROUND_LEVEL:
                 self.rect.y += self.vel
+            else:
+                self.rect.bottom = GROUND_LEVEL
+                self.vel = 0
 
         if game_state != STATE_GAMEOVER:
             # Animation
@@ -172,7 +187,7 @@ class Bird(pygame.sprite.Sprite):
             if cache_key not in self.rotation_cache:
                 rotated_img = pygame.transform.rotate(self.images[self.index], angle)
                 self.rotation_cache[cache_key] = rotated_img
-                self.mask_cache[cache_key] = pygame.mask.from_surface(rotated_img)
+                self.mask_cache[cache_key] = get_shrunk_mask(rotated_img)
             
             self.image = self.rotation_cache[cache_key]
             self.mask = self.mask_cache[cache_key]
@@ -282,8 +297,8 @@ while run:
                     point_fx.play()
 
         # Collisions
-        if flappy.rect.bottom >= GROUND_LEVEL or flappy.rect.top < 0 or \
-           pygame.sprite.spritecollide(flappy, pipe_group, False, pygame.sprite.collide_mask):
+        pipe_hit = pygame.sprite.spritecollide(flappy, pipe_group, False, pygame.sprite.collide_mask)
+        if flappy.rect.bottom >= GROUND_LEVEL or flappy.rect.top < 0 or pipe_hit:
             
             game_state = STATE_GAMEOVER
             if not hit_played:
@@ -291,6 +306,8 @@ while run:
                 flash_alpha = 255
                 if flappy.rect.bottom < GROUND_LEVEL:
                     hit_fx.play()
+                    if pipe_hit:
+                        swoosh_fx.play()
                 die_fx.play()
                 hit_played = True
                 pygame.mixer.music.stop()
