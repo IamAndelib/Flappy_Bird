@@ -128,6 +128,7 @@ def reset_game():
     global score, score_surface, score_rect, game_state, hit_played, die_played, pass_pipe, pipe_timer, new_record_set
     global shake_duration, flash_alpha, run_timer, current_scroll_speed, current_pipe_gap, current_pipe_freq, bg_long_scroll
     pipe_group.empty()
+    particle_group.empty()
     flappy.rect.x = 100
     flappy.rect.y = SCREEN_HEIGHT / 2
     flappy.vel = 0
@@ -236,11 +237,35 @@ class Button():
             surface.blit(self.original_image, self.rect)
         return reset
 
+class Particle(pygame.sprite.Sprite):
+    def __init__(self, x, y, color, size_range=(4, 8), vel_range=(-2, 2), lifetime=1.0):
+        pygame.sprite.Sprite.__init__(self)
+        self.size = random.randint(*size_range)
+        if self.size < 1: self.size = 1
+        self.image = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
+        pygame.draw.circle(self.image, color, (self.size // 2, self.size // 2), self.size // 2)
+        self.rect = self.image.get_rect(center=(x, y))
+        self.vel_x = random.uniform(*vel_range)
+        self.vel_y = random.uniform(*vel_range)
+        self.lifetime = lifetime
+        self.max_lifetime = lifetime
+
+    def update(self, dt):
+        self.lifetime -= dt
+        self.rect.x += self.vel_x
+        self.rect.y += self.vel_y
+        if self.lifetime <= 0:
+            self.kill()
+        else:
+            alpha = int(255 * (self.lifetime / self.max_lifetime))
+            self.image.set_alpha(alpha)
+
 # --- Instantiate Objects ---
 bird_group = pygame.sprite.GroupSingle()
 flappy = Bird(100, int(SCREEN_HEIGHT / 2))
 bird_group.add(flappy)
 pipe_group = pygame.sprite.Group()
+particle_group = pygame.sprite.Group()
 button = Button(SCREEN_WIDTH // 2 - 50, SCREEN_HEIGHT // 2 - 100, button_img)
 
 # --- Main Loop ---
@@ -276,8 +301,11 @@ while run:
     render_surface.blit(bg, (bg_scroll + SCREEN_WIDTH, 0))
 
     pipe_group.draw(render_surface)
+    particle_group.draw(render_surface)
     bird_group.draw(render_surface)
+    
     bird_group.update(dt)
+    particle_group.update(dt)
 
     render_surface.blit(ground, (ground_scroll, GROUND_LEVEL))
 
@@ -316,6 +344,10 @@ while run:
             
             game_state = STATE_GAMEOVER
             if not hit_played:
+                # Collision Particles (Bright and Fast)
+                for _ in range(15):
+                    particle_group.add(Particle(flappy.rect.centerx, flappy.rect.centery, WHITE))
+                
                 shake_duration = SHAKE_DURATION
                 flash_alpha = 255
                 if flappy.rect.bottom < GROUND_LEVEL:
@@ -365,8 +397,12 @@ while run:
             render_surface.blit(score_surface, score_rect)
 
     if game_state == STATE_MENU:
+        # Slow pulse effect
+        pulse_scale = 1.0 + 0.05 * math.sin(pygame.time.get_ticks() * 0.005)
         menu_text = render_score("PRESS SPACE TO FLAP", ORANGE)
-        render_surface.blit(menu_text, menu_text.get_rect(center=(SCREEN_WIDTH // 2, 150)))
+        w, h = menu_text.get_size()
+        scaled_menu = pygame.transform.smoothscale(menu_text, (int(w * pulse_scale), int(h * pulse_scale)))
+        render_surface.blit(scaled_menu, scaled_menu.get_rect(center=(SCREEN_WIDTH // 2, 150)))
 
     if game_state == STATE_GAMEOVER:
         res_color = GREEN if new_record_set else BLUE
