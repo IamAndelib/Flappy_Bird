@@ -325,14 +325,20 @@ while run:
         if flappy.rect.bottom >= GROUND_LEVEL or flappy.rect.top < 0 or pygame.sprite.spritecollide(flappy, pipe_group, False, pygame.sprite.collide_mask):
             game_state = STATE_GAMEOVER
             if not hit_played:
-                for _ in range(15):
+                # Dynamic intensity based on speed
+                intensity = current_scroll_speed / SCROLL_SPEED
+                particle_count = int(15 * intensity)
+                
+                for _ in range(particle_count):
                     particle_group.add(
                         Particle(flappy.rect.centerx, flappy.rect.centery, WHITE))
-                shake_duration, flash_alpha, hit_played = SHAKE_DURATION, 255, True
+                
+                shake_duration, flash_alpha, hit_played = SHAKE_DURATION * intensity, 255, True
+                
                 if flappy.rect.bottom < GROUND_LEVEL: 
                     hit_fx.play(); swoosh_fx.play()
-                    flappy.vel = -8 # Dramatic "kick" upward
-                    flappy.vel_x = -5 # Knockback backward
+                    flappy.vel = -8 * intensity # Scale vertical bounce
+                    flappy.vel_x = -5 * intensity # Scale backward knockback
                 die_fx.play(); music_channel.stop()
                 game_over_surf = render_score(f'NEW RECORD: {score}!' if new_record_set else f'HIGH SCORE: {high_score}', GREEN if new_record_set else BLUE)
                 if score > high_score:
