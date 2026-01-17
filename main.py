@@ -85,7 +85,8 @@ def reset_game():
     pipe_group.empty()
     particle_group.empty()
     flappy.rect.center = [100, SCREEN_HEIGHT // 2]
-    flappy.vel = flappy.angle = score = pipe_timer = run_timer = bg_long_scroll = pipe_move_speed = shake_duration = flash_alpha = 0
+    flappy.vel = flappy.angle = score = run_timer = bg_long_scroll = pipe_move_speed = shake_duration = flash_alpha = 0
+    pipe_timer = PIPE_FREQ - 0.5 # Spawn first pipe sooner
     score_surface = render_score(score, WHITE)
     score_rect = score_surface.get_rect(center=(SCREEN_WIDTH // 2, 50))
     current_scroll_speed, current_pipe_gap, current_pipe_freq = SCROLL_SPEED, PIPE_GAP, PIPE_FREQ
@@ -143,23 +144,37 @@ class Bird(pygame.sprite.Sprite):
         self.image, self.mask = self.rotation_cache[cache_key], self.mask_cache[cache_key]
 
 class Pipe(pygame.sprite.Sprite):
-    def __init__(self, x, y, position, image, mask, gap, move_speed=0, r_offset=0, r_freq=1.0):
+    def __init__(self, x, y, position, img, mask, gap, move_speed, offset, freq):
         super().__init__()
-        self.image, self.mask, self.position, self.gap, self.move_speed, self.r_offset, self.r_freq = image, mask, position, gap, move_speed, r_offset, r_freq
-        self.rect = self.image.get_rect(bottomleft=(x, y - gap/2) if position == 1 else (0, 0))
-        if position == -1: self.rect.topleft = (x, y + gap/2)
-        self.initial_rect_y, self.scored = self.rect.y, False
+        self.image = img
+        self.mask = mask
+        self.rect = self.image.get_rect()
+        self.position = position # 1 top, -1 bottom
+        if position == 1:
+            self.rect.bottomleft = [x, y - int(gap / 2)]
+        else:
+            self.rect.topleft = [x, y + int(gap / 2)]
+        self.move_speed = move_speed
+        self.offset = offset
+        self.freq = freq
+        self.base_y = self.rect.y
+        self.float_x = float(self.rect.x)
+        self.current_amplitude = 0.0
+        self.scored = False
 
-    def update(self, dt, speed):
-        self.rect.x -= speed * dt
-        # Oscillating vertical movement for increased difficulty
-        if self.move_speed > 0:
-            new_y = self.initial_rect_y + math.sin(pygame.time.get_ticks()/1000.0 * self.r_freq + self.r_offset) * (30 * self.move_speed)
-            # Boundary checks to keep pipes from completely leaving the playable area
-            if self.position == 1: new_y = min(new_y, 0)
-            else: new_y = max(new_y, GROUND_LEVEL - 560)
-            self.rect.y = new_y
-        if self.rect.right < 0: self.kill()
+    def update(self, dt, scroll_speed):
+        self.float_x -= scroll_speed * dt
+        self.rect.x = int(self.float_x)
+        if score >= 5:
+            # Gradually increase amplitude for this specific pipe
+            target_amplitude = min((score - 5) * 5 + 10, 50)
+            if self.current_amplitude < target_amplitude:
+                self.current_amplitude += 20 * dt # Ramp up at 20 pixels per second
+            
+            # Smooth sine wave movement using the per-pipe ramped amplitude
+            self.rect.y = self.base_y + math.sin(pygame.time.get_ticks() * 0.002 * self.freq + self.offset) * self.current_amplitude
+        if self.rect.right < 0:
+            self.kill()
 
 class Button:
     def __init__(self, x, y, image):
@@ -197,7 +212,8 @@ flappy = bird_group.sprite
 button = Button(SCREEN_WIDTH//2 - 50, SCREEN_HEIGHT//2 - 100, button_img)
 
 # Initial State Variables
-ground_scroll = bg_scroll = bg_long_scroll = pipe_timer = run_timer = score = shake_duration = flash_alpha = restart_delay = 0
+ground_scroll = bg_scroll = bg_long_scroll = run_timer = score = shake_duration = flash_alpha = restart_delay = 0
+pipe_timer = PIPE_FREQ - 0.5 # Spawn first pipe sooner
 current_scroll_speed, current_bg_speed, current_pipe_gap, current_pipe_freq, pipe_move_speed, score_scale = SCROLL_SPEED, BG_SCROLL_SPEED, PIPE_GAP, PIPE_FREQ, 0, 1.0
 score_surface = render_score(score)
 score_rect = score_surface.get_rect(center=(SCREEN_WIDTH//2, 50))
@@ -208,7 +224,7 @@ game_over_surf = None
 # --- Main Game Loop ---
 run = True
 while run:
-    dt = clock.tick(FPS) / 1000.0
+    dt = min(clock.tick(FPS) / 1000.0, 0.05)
     evs = pygame.event.get()
     
     # Screen Shake effect logic
@@ -231,9 +247,13 @@ while run:
         run_timer += dt
         
         # Difficulty Scaling: Speed up and tighten gaps over time
-        scale = min((run_timer / 300.0)**0.5, 1.0)
-        current_scroll_speed, current_pipe_gap, current_pipe_freq = SCROLL_SPEED + scale*160, PIPE_GAP - scale*50, PIPE_FREQ - scale*0.7
-        current_bg_speed, pipe_move_speed = current_scroll_speed/4, min(0.4 + ((score-5)**0.5)*0.3, 4.0) if score >= 5 else 0
+        # Linear scaling over 600 seconds for a much smoother progression
+        scale = min(run_timer / 600.0, 1.0)
+        current_scroll_speed = SCROLL_SPEED + scale * 120
+        current_pipe_gap = PIPE_GAP - scale * 40
+        current_pipe_freq = PIPE_FREQ - scale * 0.6
+        current_bg_speed = current_scroll_speed / 4
+        pipe_move_speed = min(0.4 + (score * 0.1), 4.0) if score >= 5 else 0
 
         # Score Tracking
         for p in pipe_group:
