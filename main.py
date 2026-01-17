@@ -100,7 +100,7 @@ def reset_game():
     particle_group.empty()
 
     flappy.rect.center = [100, SCREEN_HEIGHT // 2]
-    flappy.vel = flappy.angle = score = run_timer = bg_long_scroll = bg_scroll = ground_scroll = pipe_move_speed = shake_duration = flash_alpha = restart_delay = 0
+    flappy.vel = flappy.vel_x = flappy.angle = score = run_timer = bg_long_scroll = bg_scroll = ground_scroll = pipe_move_speed = shake_duration = flash_alpha = restart_delay = 0
     pipe_timer = PIPE_FREQ - 0.5
 
     score_surface = render_score(score, WHITE)
@@ -118,10 +118,11 @@ class Bird(pygame.sprite.Sprite):
     def __init__(self, x, y):
         super().__init__()
         self.images, self.masks = BIRD_IMAGES, BIRD_MASKS
-        self.index = self.animation_timer = self.hover_timer = self.vel = self.angle = 0
+        self.index = self.animation_timer = self.hover_timer = self.vel = self.vel_x = self.angle = 0
         self.image, self.mask = self.images[0], self.masks[0]
         self.rect = self.image.get_frect(center=(x, y))
         self.rotation_cache, self.mask_cache = {}, {}
+        # Pre-cache common flight angles
         for idx in range(len(self.images)):
             for ang in range(-85, 25):
                 img = pygame.transform.rotate(self.images[idx], ang)
@@ -138,10 +139,14 @@ class Bird(pygame.sprite.Sprite):
             self.vel = min(self.vel + GRAVITY * dt, 15)
             if self.rect.bottom < GROUND_LEVEL:
                 self.rect.y += self.vel
+                self.rect.x += self.vel_x
+                # Apply "air resistance" to horizontal movement
+                if game_state == STATE_GAMEOVER:
+                    self.vel_x *= (1.0 - 1.0 * dt)
             else:
-                self.rect.bottom, self.vel = GROUND_LEVEL, 0
+                self.rect.bottom, self.vel, self.vel_x = GROUND_LEVEL, 0, 0
 
-        if game_state != STATE_GAMEOVER:
+        if game_state == STATE_PLAYING:
             if self.vel < 0:
                 dynamic_flap_speed = max(0.04, 0.1 + (self.vel / 50.0))
             else:
@@ -157,10 +162,20 @@ class Bird(pygame.sprite.Sprite):
             target_angle = 20 if self.vel < 0 else 20 - (self.vel / 15) * 100
             lerp_speed = 5.0 if target_angle > self.angle else 3.0
             self.angle += (target_angle - self.angle) * lerp_speed * dt
+            snapped_angle = max(-80, min(20, int(self.angle)))
+        elif game_state == STATE_GAMEOVER:
+            if self.rect.bottom < GROUND_LEVEL:
+                # Tumble effect: spin rapidly while falling
+                self.angle -= 800 * dt
+                self.index = 1 # Keep wings in a mid-flap position during tumble
+            else:
+                # Stop tumbling and face down/slightly angled when on ground
+                self.angle += (-90 - self.angle) * 10.0 * dt
+            snapped_angle = int(self.angle) % 360
+            if snapped_angle > 180: snapped_angle -= 360
         else:
-            self.angle += (-80 - self.angle) * 8.0 * dt
+            snapped_angle = 0
 
-        snapped_angle = max(-80, min(20, int(self.angle)))
         cache_key = (self.index, snapped_angle)
         if cache_key not in self.rotation_cache:
             img = pygame.transform.rotate(
@@ -314,7 +329,10 @@ while run:
                     particle_group.add(
                         Particle(flappy.rect.centerx, flappy.rect.centery, WHITE))
                 shake_duration, flash_alpha, hit_played = SHAKE_DURATION, 255, True
-                if flappy.rect.bottom < GROUND_LEVEL: hit_fx.play(); swoosh_fx.play()
+                if flappy.rect.bottom < GROUND_LEVEL: 
+                    hit_fx.play(); swoosh_fx.play()
+                    flappy.vel = -8 # Dramatic "kick" upward
+                    flappy.vel_x = -5 # Knockback backward
                 die_fx.play(); music_channel.stop()
                 game_over_surf = render_score(f'NEW RECORD: {score}!' if new_record_set else f'HIGH SCORE: {high_score}', GREEN if new_record_set else BLUE)
                 if score > high_score:
