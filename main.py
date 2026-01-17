@@ -1,5 +1,6 @@
 import pygame
 import random
+import math
 from pygame.locals import *
 
 # --- Configuration Constants ---
@@ -155,6 +156,7 @@ class Bird(pygame.sprite.Sprite):
         self.masks = BIRD_MASKS
         self.index = 0
         self.animation_timer = 0
+        self.hover_timer = 0
         
         self.image = self.images[self.index]
         self.mask = self.masks[self.index]
@@ -165,7 +167,10 @@ class Bird(pygame.sprite.Sprite):
         self.mask_cache = {}
 
     def update(self, dt):
-        if game_state != STATE_MENU:
+        if game_state == STATE_MENU:
+            self.hover_timer += dt
+            self.rect.centery = (SCREEN_HEIGHT / 2) + math.sin(self.hover_timer * 8) * 15
+        else:
             self.vel += GRAVITY * dt
             if self.vel > 15:
                 self.vel = 15
