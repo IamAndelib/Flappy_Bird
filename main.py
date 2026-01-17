@@ -274,15 +274,16 @@ while run:
 
     if game_state == STATE_PLAYING:
         run_timer += dt
-        # Asymptotic scaling: difficulty increases fast at first, then slows down as it approaches the cap (1.0).
-        # At 300s (5 mins), scale is ~0.53. At 900s (15 mins), scale is ~0.86.
-        scale = 1.0 - math.exp(-run_timer / 400.0)
+        # Faster ramp-up: Time constant reduced to 180s (3 mins).
+        # Reaches ~63% difficulty at 3 mins, ~86% at 6 mins.
+        scale = 1.0 - math.exp(-run_timer / 180.0)
         
-        current_scroll_speed = SCROLL_SPEED + scale * 120
-        current_pipe_gap = PIPE_GAP - scale * 40
-        current_pipe_freq = PIPE_FREQ - scale * 0.6
-        current_bg_speed = BG_SCROLL_SPEED + scale * 30
-        bg_long_speed = (BG_SCROLL_SPEED / 2) + scale * 15
+        # Increased maximum caps for higher difficulty
+        current_scroll_speed = SCROLL_SPEED + scale * 160
+        current_pipe_gap = PIPE_GAP - scale * 55
+        current_pipe_freq = PIPE_FREQ - scale * 0.75
+        current_bg_speed = BG_SCROLL_SPEED + scale * 40
+        bg_long_speed = (BG_SCROLL_SPEED / 2) + scale * 20
 
         for p in pipe_group:
             if not p.scored and flappy.rect.left > p.rect.right and p.position == -1:
