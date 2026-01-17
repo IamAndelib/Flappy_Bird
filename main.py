@@ -56,6 +56,7 @@ current_scroll_speed = SCROLL_SPEED
 current_bg_speed = BG_SCROLL_SPEED
 current_pipe_gap = PIPE_GAP
 current_pipe_freq = PIPE_FREQ
+pipe_move_speed = 0
 score = 0
 pass_pipe = False
 hit_played = False
@@ -134,7 +135,7 @@ pygame.mixer.music.set_volume(0.5)
 def reset_game():
     global score, score_surface, score_rect, game_state, hit_played, die_played, pass_pipe, pipe_timer, new_record_set
     global shake_duration, flash_alpha, run_timer, current_scroll_speed, current_pipe_gap, current_pipe_freq, bg_long_scroll
-    global game_over_surf
+    global game_over_surf, pipe_move_speed
     pipe_group.empty()
     particle_group.empty()
     flappy.rect.x = 100
@@ -150,6 +151,7 @@ def reset_game():
     current_scroll_speed = SCROLL_SPEED
     current_pipe_gap = PIPE_GAP
     current_pipe_freq = PIPE_FREQ
+    pipe_move_speed = 0
     game_state = STATE_MENU
     hit_played = False
     die_played = False
@@ -218,18 +220,43 @@ class Bird(pygame.sprite.Sprite):
             self.mask = self.mask_cache[cache_key]
 
 class Pipe(pygame.sprite.Sprite):
-    def __init__(self, x, y, position, image, mask, gap):
+    def __init__(self, x, y, position, image, mask, gap, move_speed=0, random_offset=0, random_freq=1.0):
         pygame.sprite.Sprite.__init__(self)
         self.image = image
         self.mask = mask
         self.rect = self.image.get_rect()
+        self.move_speed = move_speed
+        self.position = position
+        self.gap = gap
+        self.random_offset = random_offset
+        self.random_freq = random_freq
+        
         if position == 1:
             self.rect.bottomleft = [x, y - gap / 2]
         if position == -1:
             self.rect.topleft = [x, y + gap / 2]
+        
+        self.initial_rect_y = self.rect.y
 
     def update(self, dt, speed):
         self.rect.x -= speed * dt
+        
+        # Vertical movement using sine wave
+        if self.move_speed > 0:
+            time_sec = pygame.time.get_ticks() / 1000.0
+            displacement = math.sin(time_sec * self.random_freq + self.random_offset) * (30 * self.move_speed)
+            new_y = self.initial_rect_y + displacement
+            
+            # Boundary checks: Ensure top/bottom of pipe sprites don't enter the screen
+            if self.position == 1: # Top Pipe (image is sticking out above)
+                if new_y > 0: 
+                    new_y = 0
+            else: # Bottom Pipe (image is sticking out below ground)
+                if new_y + 560 < GROUND_LEVEL:
+                    new_y = GROUND_LEVEL - 560
+            
+            self.rect.y = new_y
+
         if self.rect.right < 0:
             self.kill()
 
@@ -335,6 +362,14 @@ while run:
         current_pipe_freq = PIPE_FREQ - (scale * 0.7)
         current_bg_speed = current_scroll_speed / 4
 
+        # Vertical pipe movement difficulty scaling
+        if score >= 5:
+            # Starts very slow (0.4) and increases with a diminishing rate
+            # Formula: base_speed + (sqrt(score_diff) * growth_factor)
+            pipe_move_speed = min(0.4 + ((score - 5) ** 0.5) * 0.3, 4.0)
+        else:
+            pipe_move_speed = 0
+
         # Score
         if len(pipe_group) > 0:
             if flappy.rect.left > pipe_group.sprites()[0].rect.left and \
@@ -386,8 +421,10 @@ while run:
         pipe_timer += dt
         if pipe_timer > current_pipe_freq:
             h = random.randint(-100, 100)
-            pipe_group.add(Pipe(SCREEN_WIDTH, int(SCREEN_HEIGHT/2)+h, -1, pipe_img, pipe_mask, current_pipe_gap))
-            pipe_group.add(Pipe(SCREEN_WIDTH, int(SCREEN_HEIGHT/2)+h, 1, pipe_img_flipped, pipe_mask_flipped, current_pipe_gap))
+            r_offset = random.uniform(0, math.pi * 2)
+            r_freq = random.uniform(0.8, 1.2)
+            pipe_group.add(Pipe(SCREEN_WIDTH, int(SCREEN_HEIGHT/2)+h, -1, pipe_img, pipe_mask, current_pipe_gap, pipe_move_speed, r_offset, r_freq))
+            pipe_group.add(Pipe(SCREEN_WIDTH, int(SCREEN_HEIGHT/2)+h, 1, pipe_img_flipped, pipe_mask_flipped, current_pipe_gap, pipe_move_speed, r_offset, r_freq))
             pipe_timer = 0
 
     # Scrolling (Active in MENU and PLAYING)
