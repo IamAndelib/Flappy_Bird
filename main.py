@@ -324,7 +324,11 @@ while run:
                 point_fx.play()
                 p.scored = True
 
-        if flappy.rect.bottom >= GROUND_LEVEL or flappy.rect.top < 0 or pygame.sprite.spritecollide(flappy, pipe_group, False, pygame.sprite.collide_mask):
+        hit_pipe = pygame.sprite.spritecollide(flappy, pipe_group, False, pygame.sprite.collide_mask)
+        hit_top = flappy.rect.top < 0
+        hit_ground = flappy.rect.bottom >= GROUND_LEVEL
+
+        if hit_ground or hit_top or hit_pipe:
             game_state = STATE_GAMEOVER
             if not hit_played:
                 # Dynamic intensity based on speed
@@ -337,10 +341,16 @@ while run:
                 
                 shake_duration, flash_alpha, hit_played = SHAKE_DURATION * intensity, 255, True
                 
-                if flappy.rect.bottom < GROUND_LEVEL: 
+                if not hit_ground:
                     hit_fx.play(); swoosh_fx.play()
-                    flappy.vel = -8 * intensity # Scale vertical bounce
-                    flappy.vel_x = -5 * intensity # Scale backward knockback
+                    if hit_pipe:
+                        # Only apply the dramatic "projectile" motion if hitting a pipe
+                        flappy.vel = -8 * intensity
+                        flappy.vel_x = -5 * intensity
+                    else:
+                        # If hitting the top, just ensure it stops moving up so it falls
+                        flappy.vel = 0
+                
                 die_fx.play(); music_channel.stop()
                 game_over_surf = render_score(f'NEW RECORD: {score}!' if new_record_set else f'HIGH SCORE: {high_score}', GREEN if new_record_set else BLUE)
                 if score > high_score:
