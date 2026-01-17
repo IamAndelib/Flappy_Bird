@@ -58,7 +58,6 @@ current_pipe_gap = PIPE_GAP
 current_pipe_freq = PIPE_FREQ
 pipe_move_speed = 0
 score = 0
-pass_pipe = False
 hit_played = False
 die_played = False
 shake_duration = 0
@@ -133,7 +132,7 @@ pygame.mixer.music.load('audio/bg_music.mp3')
 pygame.mixer.music.set_volume(0.5)
 
 def reset_game():
-    global score, score_surface, score_rect, game_state, hit_played, die_played, pass_pipe, pipe_timer, new_record_set
+    global score, score_surface, score_rect, game_state, hit_played, die_played, pipe_timer, new_record_set
     global shake_duration, flash_alpha, run_timer, current_scroll_speed, current_pipe_gap, current_pipe_freq, bg_long_scroll
     global game_over_surf, pipe_move_speed
     pipe_group.empty()
@@ -144,7 +143,6 @@ def reset_game():
     score = 0
     score_surface = render_score(score, WHITE)
     score_rect = score_surface.get_rect(center=(SCREEN_WIDTH // 2, 50))
-    pass_pipe = False
     pipe_timer = 0
     run_timer = 0
     bg_long_scroll = 0
@@ -175,8 +173,16 @@ class Bird(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.center = [x, y]
         self.vel = 0
+        
+        # Optimized caching
         self.rotation_cache = {}
         self.mask_cache = {}
+        # Pre-populate common angles to avoid runtime calculation
+        for idx in range(len(self.images)):
+            for angle in range(-90, 45, 5): # Common range of rotation
+                img = pygame.transform.rotate(self.images[idx], angle)
+                self.rotation_cache[(idx, angle)] = img
+                self.mask_cache[(idx, angle)] = get_shrunk_mask(img)
 
     def update(self, dt):
         if game_state == STATE_MENU:
@@ -199,11 +205,13 @@ class Bird(pygame.sprite.Sprite):
                 self.animation_timer = 0
                 self.index = (self.index + 1) % len(self.images)
             
-            # Rotation
+            # Rotation (Snap to nearest 5 degrees for cache hits)
             angle = int(self.vel * -3)
-            cache_key = (self.index, angle)
+            snapped_angle = (angle // 5) * 5
+            cache_key = (self.index, snapped_angle)
+            
             if cache_key not in self.rotation_cache:
-                rotated_img = pygame.transform.rotate(self.images[self.index], angle)
+                rotated_img = pygame.transform.rotate(self.images[self.index], snapped_angle)
                 self.rotation_cache[cache_key] = rotated_img
                 self.mask_cache[cache_key] = get_shrunk_mask(rotated_img)
             
@@ -230,6 +238,7 @@ class Pipe(pygame.sprite.Sprite):
         self.gap = gap
         self.random_offset = random_offset
         self.random_freq = random_freq
+        self.scored = False # New attribute for better score tracking
         
         if position == 1:
             self.rect.bottomleft = [x, y - gap / 2]
@@ -371,21 +380,19 @@ while run:
             pipe_move_speed = 0
 
         # Score
-        if len(pipe_group) > 0:
-            if flappy.rect.left > pipe_group.sprites()[0].rect.left and \
-               flappy.rect.right < pipe_group.sprites()[0].rect.right and not pass_pipe:
-                pass_pipe = True
-            if pass_pipe:
-                if flappy.rect.left > pipe_group.sprites()[0].rect.right:
+        for pipe in pipe_group:
+            if not pipe.scored and flappy.rect.left > pipe.rect.right:
+                # Only score on the bottom pipe of each pair to avoid double counting
+                if pipe.position == -1: 
                     score += 1
                     if score > high_score:
                         new_record_set = True
                     color = RED if new_record_set else WHITE
                     score_surface = render_score(score, color)
                     score_rect = score_surface.get_rect(center=(SCREEN_WIDTH // 2, 50))
-                    pass_pipe = False
                     point_fx.play()
                     score_scale = 1.4
+                pipe.scored = True
 
         # Collisions
         pipe_hit = pygame.sprite.spritecollide(flappy, pipe_group, False, pygame.sprite.collide_mask)
