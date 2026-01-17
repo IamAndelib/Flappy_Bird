@@ -11,7 +11,7 @@ PIPE_GAP, PIPE_FREQ = 150, 1.5
 SCROLL_SPEED, BG_SCROLL_SPEED = 240, 60
 GRAVITY, JUMP_STRENGTH = 30, -8
 SHAKE_INTENSITY, SHAKE_DURATION = 15, 0.4
-FLASH_DURATION, FLAP_SPEED = 0.1, 0.1
+FLAP_SPEED = 0.1
 
 WHITE, BLACK, RED, BLUE, GREEN, ORANGE = (255,)*3, (0,)*3, (255, 0, 0), (30, 80, 250), (0, 150, 0), (255, 140, 0)
 
@@ -81,12 +81,15 @@ def reset_game():
     """Resets all game variables for a new round."""
     global score, score_surface, score_rect, game_state, hit_played, die_played, pipe_timer, new_record_set
     global shake_duration, flash_alpha, run_timer, current_scroll_speed, current_pipe_gap, current_pipe_freq
-    global bg_long_scroll, game_over_surf, pipe_move_speed
+    global bg_long_scroll, game_over_surf, pipe_move_speed, restart_delay, bg_scroll, ground_scroll
+    
     pipe_group.empty()
     particle_group.empty()
+    
     flappy.rect.center = [100, SCREEN_HEIGHT // 2]
-    flappy.vel = flappy.angle = score = run_timer = bg_long_scroll = pipe_move_speed = shake_duration = flash_alpha = 0
-    pipe_timer = PIPE_FREQ - 0.5 # Spawn first pipe sooner
+    flappy.vel = flappy.angle = score = run_timer = bg_long_scroll = bg_scroll = ground_scroll = pipe_move_speed = shake_duration = flash_alpha = restart_delay = 0
+    pipe_timer = PIPE_FREQ - 0.5 
+    
     score_surface = render_score(score, WHITE)
     score_rect = score_surface.get_rect(center=(SCREEN_WIDTH // 2, 50))
     current_scroll_speed, current_pipe_gap, current_pipe_freq = SCROLL_SPEED, PIPE_GAP, PIPE_FREQ
@@ -100,7 +103,6 @@ class Bird(pygame.sprite.Sprite):
         self.index = self.animation_timer = self.hover_timer = self.vel = self.angle = 0
         self.image, self.mask = self.images[0], self.masks[0]
         self.rect = self.image.get_rect(center=(x, y))
-        # Caching rotations to avoid expensive runtime calculations
         self.rotation_cache, self.mask_cache = {}, {}
         for idx in range(len(self.images)):
             for ang in range(-85, 25):
@@ -109,40 +111,29 @@ class Bird(pygame.sprite.Sprite):
 
     def update(self, dt):
         if game_state == STATE_MENU:
-            # Gentle hover effect on menu
             self.hover_timer += dt
             self.rect.centery = (SCREEN_HEIGHT / 2) + math.sin(self.hover_timer * 8) * 15
             self.angle = 0
         else:
-            # Apply gravity
             self.vel = min(self.vel + GRAVITY * dt, 15)
             if self.rect.bottom < GROUND_LEVEL: self.rect.y += self.vel
             else: self.rect.bottom, self.vel = GROUND_LEVEL, 0
 
         if game_state != STATE_GAMEOVER:
-            # Adaptive Flap Speed: Flap faster when rising, slower when falling
-            # Normal speed is 0.1. We'll range from 0.04 (fast) to 0.15 (slow)
-            if self.vel < 0:
-                dynamic_flap_speed = max(0.04, 0.1 + (self.vel / 50.0))
-            else:
-                dynamic_flap_speed = min(0.15, 0.1 + (self.vel / 100.0))
+            if self.vel < 0: dynamic_flap_speed = max(0.04, 0.1 + (self.vel / 50.0))
+            else: dynamic_flap_speed = min(0.15, 0.1 + (self.vel / 100.0))
 
-            # Flap animation
             self.animation_timer += dt
             if self.animation_timer > dynamic_flap_speed:
                 self.animation_timer, self.index = 0, (self.index + 1) % len(self.images)
-            # Stop flapping if falling fast
             if self.vel > 7: self.index, self.animation_timer = 1, 0
             
-            # Smooth Rotation Logic: Interpolate towards target angle based on velocity
             target_angle = 20 if self.vel < 0 else 20 - (self.vel / 15) * 100
             lerp_speed = 5.0 if target_angle > self.angle else 3.0
             self.angle += (target_angle - self.angle) * lerp_speed * dt
         else:
-            # Rapid nose-dive on death
             self.angle += (-80 - self.angle) * 8.0 * dt
 
-        # Update image and mask from cache based on current state
         snapped_angle = max(-80, min(20, int(self.angle)))
         cache_key = (self.index, snapped_angle)
         if cache_key not in self.rotation_cache:
@@ -151,41 +142,25 @@ class Bird(pygame.sprite.Sprite):
         self.image, self.mask = self.rotation_cache[cache_key], self.mask_cache[cache_key]
 
 class Pipe(pygame.sprite.Sprite):
-    def __init__(self, x, y, position, img, mask, gap, move_speed, offset, freq):
+    def __init__(self, x, y, position, img, mask, gap, offset, freq):
         super().__init__()
-        self.image = img
-        self.mask = mask
+        self.image, self.mask, self.position = img, mask, position
         self.rect = self.image.get_rect()
-        self.position = position # 1 top, -1 bottom
-        if position == 1:
-            self.rect.bottomleft = [x, y - int(gap / 2)]
-        else:
-            self.rect.topleft = [x, y + int(gap / 2)]
-        self.move_speed = move_speed
-        self.phase = offset
-        self.freq = freq
-        self.base_y = float(self.rect.y)
-        self.float_x = float(self.rect.x)
-        self.float_y = float(self.rect.y)
-        self.current_amplitude = 0.0
-        self.scored = False
+        if position == 1: self.rect.bottomleft = [x, y - int(gap / 2)]
+        else: self.rect.topleft = [x, y + int(gap / 2)]
+        self.phase, self.freq, self.base_y = offset, freq, float(self.rect.y)
+        self.float_x, self.float_y, self.current_amplitude, self.scored = float(self.rect.x), float(self.rect.y), 0.0, False
 
     def update(self, dt, scroll_speed):
         self.float_x -= scroll_speed * dt
         self.rect.x = int(self.float_x)
         if score >= 20:
-            # Gradually increase amplitude for this specific pipe
             target_amplitude = min((score - 20) * 5 + 10, 50)
-            if self.current_amplitude < target_amplitude:
-                self.current_amplitude += 20 * dt
-            
-            # Smoothly advance the sine wave phase using dt
+            if self.current_amplitude < target_amplitude: self.current_amplitude += 20 * dt
             self.phase += dt * self.freq * 1.5
             self.float_y = self.base_y + math.sin(self.phase) * self.current_amplitude
             self.rect.y = int(self.float_y)
-
-        if self.rect.right < 0:
-            self.kill()
+        if self.rect.right < 0: self.kill()
 
 class Button:
     def __init__(self, x, y, image):
@@ -218,14 +193,16 @@ class Particle(pygame.sprite.Sprite):
         else: self.image.set_alpha(int(255 * self.life))
 
 # --- Object Instantiation ---
-bird_group, pipe_group, particle_group = pygame.sprite.GroupSingle(Bird(100, SCREEN_HEIGHT//2)), pygame.sprite.Group(), pygame.sprite.Group()
+bird_group = pygame.sprite.GroupSingle(Bird(100, SCREEN_HEIGHT//2))
+pipe_group = pygame.sprite.Group()
+particle_group = pygame.sprite.Group()
 flappy = bird_group.sprite
 button = Button(SCREEN_WIDTH//2 - 50, SCREEN_HEIGHT//2 - 100, button_img)
 
-# Initial State Variables
+# Global State
 ground_scroll = bg_scroll = bg_long_scroll = run_timer = score = shake_duration = flash_alpha = restart_delay = 0
-pipe_timer = PIPE_FREQ - 0.5 # Spawn first pipe sooner
-current_scroll_speed, current_bg_speed, current_pipe_gap, current_pipe_freq, pipe_move_speed, score_scale = SCROLL_SPEED, BG_SCROLL_SPEED, PIPE_GAP, PIPE_FREQ, 0, 1.0
+pipe_timer = PIPE_FREQ - 0.5
+current_scroll_speed, current_bg_speed, bg_long_speed, current_pipe_gap, current_pipe_freq, score_scale = SCROLL_SPEED, BG_SCROLL_SPEED, BG_SCROLL_SPEED/2, PIPE_GAP, PIPE_FREQ, 1.0
 score_surface = render_score(score)
 score_rect = score_surface.get_rect(center=(SCREEN_WIDTH//2, 50))
 menu_text_surf = render_score("PRESS SPACE TO FLAP", ORANGE)
@@ -238,44 +215,36 @@ while run:
     dt = min(clock.tick(FPS) / 1000.0, 0.05)
     evs = pygame.event.get()
     
-    # Screen Shake effect logic
     ox = oy = 0
     if shake_duration > 0:
         intense = int(SHAKE_INTENSITY * (shake_duration / SHAKE_DURATION))
         shake_duration -= dt
         if intense > 0: ox, oy = random.randint(-intense, intense), random.randint(-intense, intense)
 
-    # Parallax Scrolling Background
     render_surface.blit(bg_long, (bg_long_scroll, 0)); render_surface.blit(bg_long, (bg_long_scroll + 1280, 0))
     render_surface.blit(bg, (bg_scroll, 0)); render_surface.blit(bg, (bg_scroll + SCREEN_WIDTH, 0))
     
-    # Update and Draw Entities
     pipe_group.draw(render_surface); particle_group.draw(render_surface); bird_group.draw(render_surface)
     bird_group.update(dt); particle_group.update(dt)
     render_surface.blit(ground, (ground_scroll, GROUND_LEVEL))
 
     if game_state == STATE_PLAYING:
         run_timer += dt
-        
-        # Difficulty Scaling: Speed up and tighten gaps over time
-        # Linear scaling over 600 seconds for a much smoother progression
         scale = min(run_timer / 600.0, 1.0)
         current_scroll_speed = SCROLL_SPEED + scale * 120
         current_pipe_gap = PIPE_GAP - scale * 40
         current_pipe_freq = PIPE_FREQ - scale * 0.6
-        current_bg_speed = current_scroll_speed / 4
-        pipe_move_speed = min(0.4 + (score * 0.1), 4.0) if score >= 20 else 0
+        current_bg_speed = BG_SCROLL_SPEED + scale * 30
+        bg_long_speed = (BG_SCROLL_SPEED / 2) + scale * 15
 
-        # Score Tracking
         for p in pipe_group:
             if not p.scored and flappy.rect.left > p.rect.right and p.position == -1:
                 score += 1
                 if score > high_score: new_record_set = True
                 score_surface = render_score(score, RED if new_record_set else WHITE)
-                score_rect, score_scale = score_surface.get_rect(center=(SCREEN_WIDTH//2, 50)), 1.4
+                score_rect, score_scale = score_surface.get_rect(center=(SCREEN_WIDTH // 2, 50)), 1.4
                 point_fx.play(); p.scored = True
 
-        # Collision Handling
         if flappy.rect.bottom >= GROUND_LEVEL or flappy.rect.top < 0 or pygame.sprite.spritecollide(flappy, pipe_group, False, pygame.sprite.collide_mask):
             game_state = STATE_GAMEOVER
             if not hit_played:
@@ -288,24 +257,20 @@ while run:
                     high_score = score
                     with open('highscore.txt', 'w') as f: f.write(str(high_score))
         
-        # Pipe management
         pipe_group.update(dt, current_scroll_speed)
         pipe_timer += dt
         if pipe_timer > current_pipe_freq:
             h, off, f = random.randint(-100, 100), random.uniform(0, math.pi*2), random.uniform(0.8, 1.2)
-            # Add subtle randomness to the gap size for unpredictability
             random_gap = current_pipe_gap + random.randint(-15, 15)
-            pipe_group.add(Pipe(SCREEN_WIDTH, SCREEN_HEIGHT//2+h, -1, pipe_img, pipe_mask, random_gap, pipe_move_speed, off, f))
-            pipe_group.add(Pipe(SCREEN_WIDTH, SCREEN_HEIGHT//2+h, 1, pipe_img_flipped, pipe_mask_flipped, random_gap, pipe_move_speed, off, f))
+            pipe_group.add(Pipe(SCREEN_WIDTH, SCREEN_HEIGHT//2+h, -1, pipe_img, pipe_mask, random_gap, off, f))
+            pipe_group.add(Pipe(SCREEN_WIDTH, SCREEN_HEIGHT//2+h, 1, pipe_img_flipped, pipe_mask_flipped, random_gap, off, f))
             pipe_timer = 0
 
-    # Scrolling backgrounds when not in game-over
     if game_state != STATE_GAMEOVER:
         ground_scroll = (ground_scroll - current_scroll_speed*dt) % -35
         bg_scroll = (bg_scroll - current_bg_speed*dt) % -SCREEN_WIDTH
-        bg_long_scroll = (bg_long_scroll - (current_bg_speed/2)*dt) % -1280
+        bg_long_scroll = (bg_long_scroll - bg_long_speed*dt) % -1280
 
-    # UI Rendering
     if game_state != STATE_MENU:
         if score_scale > 1.0:
             score_scale = max(1.0, score_scale - 2.0*dt)
@@ -324,15 +289,12 @@ while run:
             if restart_delay == 0: reset_game(); swoosh_fx.play()
         elif button.draw(render_surface): reset_game(); swoosh_fx.play()
 
-    # Flash effect on hit
     if flash_alpha > 0:
         fs = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT)); fs.fill(WHITE); fs.set_alpha(flash_alpha)
         render_surface.blit(fs, (0, 0)); flash_alpha = max(0, flash_alpha - 1500*dt)
 
-    # Final display blit with screen shake offsets
     screen.fill(BLACK); screen.blit(render_surface, (ox, oy))
     
-    # Event Handling
     for e in evs:
         if e.type == QUIT: run = False
         if e.type == KEYDOWN and e.key == K_SPACE:
