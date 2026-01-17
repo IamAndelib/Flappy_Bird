@@ -325,11 +325,10 @@ while run:
         pipe_group.update(dt, current_scroll_speed)
         pipe_timer += dt
         if pipe_timer > current_pipe_freq:
-            h, off, f = random.randint(-100, 100), random.uniform(0,
-                                                                  math.pi*2), random.uniform(0.8, 1.2)
-            random_gap = current_pipe_gap + random.randint(-15, 15)
-            pipe_group.add(Pipe(SCREEN_WIDTH, SCREEN_HEIGHT//2 +
-                           h, -1, pipe_img, pipe_mask, random_gap, off, f))
+            h, off, f = random.randint(-100, 100), random.uniform(0, math.pi*2), random.uniform(0.8, 1.2)
+            # Increased randomness and allows for significantly tighter gaps
+            random_gap = max(80, current_pipe_gap + random.randint(-40, 20))
+            pipe_group.add(Pipe(SCREEN_WIDTH, SCREEN_HEIGHT//2+h, -1, pipe_img, pipe_mask, random_gap, off, f))
             pipe_group.add(Pipe(SCREEN_WIDTH, SCREEN_HEIGHT//2+h, 1,
                            pipe_img_flipped, pipe_mask_flipped, random_gap, off, f))
             pipe_timer = 0
