@@ -61,6 +61,7 @@ die_played = False
 shake_duration = 0
 flash_alpha = 0
 new_record_set = False
+score_scale = 1.0
 
 # Load high score
 try:
@@ -78,7 +79,7 @@ def render_score(score_val, color=WHITE):
     surf = pygame.Surface((w + 4, h + 4), pygame.SRCALPHA)
     surf.blit(shadow_surf, (2, 2))
     surf.blit(main_surf, (0, 0))
-    return surf
+    return surf.convert_alpha()
 
 score_surface = render_score(score, WHITE)
 score_rect = score_surface.get_rect(center=(SCREEN_WIDTH // 2, 50))
@@ -249,9 +250,16 @@ while run:
     offset_x = 0
     offset_y = 0
     if shake_duration > 0:
+        # Calculate current intensity based on remaining time (linear decay)
+        current_intensity = int(SHAKE_INTENSITY * (shake_duration / SHAKE_DURATION))
         shake_duration -= dt
-        offset_x = random.randint(-SHAKE_INTENSITY, SHAKE_INTENSITY)
-        offset_y = random.randint(-SHAKE_INTENSITY, SHAKE_INTENSITY)
+        if current_intensity > 0:
+            offset_x = random.randint(-current_intensity, current_intensity)
+            offset_y = random.randint(-current_intensity, current_intensity)
+        else:
+            shake_duration = 0
+            offset_x = 0
+            offset_y = 0
 
     # Drawing
     # Parallax Background (Slowest - Long BG)
@@ -295,6 +303,7 @@ while run:
                     score_rect = score_surface.get_rect(center=(SCREEN_WIDTH // 2, 50))
                     pass_pipe = False
                     point_fx.play()
+                    score_scale = 1.4  # Trigger pop effect
 
         # Collisions
         pipe_hit = pygame.sprite.spritecollide(flappy, pipe_group, False, pygame.sprite.collide_mask)
@@ -338,7 +347,17 @@ while run:
 
     # UI
     if game_state != STATE_MENU:
-        render_surface.blit(score_surface, score_rect)
+        if score_scale > 1.0:
+            score_scale -= 2.0 * dt  # Smoothly return to normal size
+            if score_scale < 1.0: score_scale = 1.0
+            
+            scaled_w = int(score_surface.get_width() * score_scale)
+            scaled_h = int(score_surface.get_height() * score_scale)
+            scaled_score = pygame.transform.smoothscale(score_surface, (scaled_w, scaled_h))
+            scaled_rect = scaled_score.get_rect(center=(SCREEN_WIDTH // 2, 50))
+            render_surface.blit(scaled_score, scaled_rect)
+        else:
+            render_surface.blit(score_surface, score_rect)
 
     if game_state == STATE_MENU:
         menu_text = render_score("PRESS SPACE TO FLAP", ORANGE)
