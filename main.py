@@ -12,6 +12,7 @@ screen_width = 864
 screen_height = 936
 
 screen = pygame.display.set_mode((screen_width, screen_height))
+render_surface = pygame.Surface((screen_width, screen_height))
 pygame.display.set_caption("Flappy Bird")
 
 # define font
@@ -39,6 +40,8 @@ score = 0
 pass_pipe = False
 hit_played = False
 die_played = False
+shake_duration = 0
+shake_intensity = 0
 
 # Load high score
 try:
@@ -99,6 +102,9 @@ def reset_game():
     hit_played = False
     die_played = False
     new_record_set = False
+    global shake_duration, shake_intensity
+    shake_duration = 0
+    shake_intensity = 0
     return score
 class Bird(pygame.sprite.Sprite):
     def __init__(self, x, y):
@@ -178,7 +184,7 @@ class Button():
         self.hover_rect = self.hover_image.get_rect()
         self.hover_rect.center = self.rect.center
 
-    def draw(self, forced_pressed=False):
+    def draw(self, surface, forced_pressed=False):
 
         reset = False
 
@@ -187,11 +193,11 @@ class Button():
 
         # check if mouse is over the button or if pressed is forced
         if self.rect.collidepoint(position) or forced_pressed:
-            screen.blit(self.hover_image, self.hover_rect)
+            surface.blit(self.hover_image, self.hover_rect)
             if pygame.mouse.get_pressed()[0] == 1:
                 reset = True
         else:
-            screen.blit(self.original_image, self.rect)
+            surface.blit(self.original_image, self.rect)
 
         return reset
 
@@ -215,16 +221,24 @@ while run:
     # Calculate delta time (dt) in seconds
     dt = clock.tick(fps) / 1000.0
 
-    # background
-    screen.blit(bg, (bg_scroll, 0))
-    screen.blit(bg, (bg_scroll + screen_width, 0))
+    # Screen shake logic
+    offset_x = 0
+    offset_y = 0
+    if shake_duration > 0:
+        shake_duration -= dt
+        offset_x = random.randint(-int(shake_intensity), int(shake_intensity))
+        offset_y = random.randint(-int(shake_intensity), int(shake_intensity))
 
-    pipe_group.draw(screen)
-    bird_group.draw(screen)
+    # background
+    render_surface.blit(bg, (bg_scroll, 0))
+    render_surface.blit(bg, (bg_scroll + screen_width, 0))
+
+    pipe_group.draw(render_surface)
+    bird_group.draw(render_surface)
     bird_group.update(dt)
 
     # draw ground
-    screen.blit(ground, (ground_scroll, 768))
+    render_surface.blit(ground, (ground_scroll, 768))
 
     # game logic
     if game_over == False and start == True:
@@ -249,6 +263,8 @@ while run:
             if die_played == False:
                 die_fx.play()
                 die_played = True
+                shake_duration = 0.4
+                shake_intensity = 15
                 pygame.mixer.music.stop()
                 if score > high_score:
                     high_score = score
@@ -261,6 +277,8 @@ while run:
             if hit_played == False:
                 hit_fx.play()
                 hit_played = True
+                shake_duration = 0.4
+                shake_intensity = 15
                 pygame.mixer.music.stop()
                 if score > high_score:
                     high_score = score
@@ -292,7 +310,7 @@ while run:
             last_pipe = time_now
 
     # Draw cached score
-    screen.blit(score_surface, score_rect)
+    render_surface.blit(score_surface, score_rect)
 
     # Check game over
     if game_over == True:
@@ -301,20 +319,24 @@ while run:
         else:
             high_score_surf = render_score(f'HIGH SCORE: {high_score}', blue)
         high_score_rect = high_score_surf.get_rect(center=(screen_width // 2, 120))
-        screen.blit(high_score_surf, high_score_rect)
+        render_surface.blit(high_score_surf, high_score_rect)
 
         if restart_delay > 0:
-            button.draw(forced_pressed=True)
+            button.draw(render_surface, forced_pressed=True)
             restart_delay -= 1
             if restart_delay == 0:
                 game_over = False
                 score = reset_game()
                 swoosh_fx.play()
         else:
-            if button.draw() == True:
+            if button.draw(render_surface) == True:
                 game_over = False
                 score = reset_game()
                 swoosh_fx.play()
+
+    # Final blit to screen with shake offset
+    screen.fill(black) # Fill with black to avoid ghosting
+    screen.blit(render_surface, (offset_x, offset_y))
 
     for event in event_list:
         if event.type == pygame.QUIT:
@@ -335,9 +357,5 @@ while run:
                     restart_delay = 10  # Show press effect for 10 frames
 
     pygame.display.flip()
-
-# Reset high score upon quitting
-with open('highscore.txt', 'w') as f:
-    f.write('0')
 
 pygame.quit()
