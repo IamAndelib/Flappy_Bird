@@ -120,9 +120,16 @@ class Bird(pygame.sprite.Sprite):
             else: self.rect.bottom, self.vel = GROUND_LEVEL, 0
 
         if game_state != STATE_GAMEOVER:
+            # Adaptive Flap Speed: Flap faster when rising, slower when falling
+            # Normal speed is 0.1. We'll range from 0.04 (fast) to 0.15 (slow)
+            if self.vel < 0:
+                dynamic_flap_speed = max(0.04, 0.1 + (self.vel / 50.0))
+            else:
+                dynamic_flap_speed = min(0.15, 0.1 + (self.vel / 100.0))
+
             # Flap animation
             self.animation_timer += dt
-            if self.animation_timer > FLAP_SPEED:
+            if self.animation_timer > dynamic_flap_speed:
                 self.animation_timer, self.index = 0, (self.index + 1) % len(self.images)
             # Stop flapping if falling fast
             if self.vel > 7: self.index, self.animation_timer = 1, 0
@@ -282,8 +289,10 @@ while run:
         pipe_timer += dt
         if pipe_timer > current_pipe_freq:
             h, off, f = random.randint(-100, 100), random.uniform(0, math.pi*2), random.uniform(0.8, 1.2)
-            pipe_group.add(Pipe(SCREEN_WIDTH, SCREEN_HEIGHT//2+h, -1, pipe_img, pipe_mask, current_pipe_gap, pipe_move_speed, off, f))
-            pipe_group.add(Pipe(SCREEN_WIDTH, SCREEN_HEIGHT//2+h, 1, pipe_img_flipped, pipe_mask_flipped, current_pipe_gap, pipe_move_speed, off, f))
+            # Add subtle randomness to the gap size for unpredictability
+            random_gap = current_pipe_gap + random.randint(-15, 15)
+            pipe_group.add(Pipe(SCREEN_WIDTH, SCREEN_HEIGHT//2+h, -1, pipe_img, pipe_mask, random_gap, pipe_move_speed, off, f))
+            pipe_group.add(Pipe(SCREEN_WIDTH, SCREEN_HEIGHT//2+h, 1, pipe_img_flipped, pipe_mask_flipped, random_gap, pipe_move_speed, off, f))
             pipe_timer = 0
 
     # Scrolling backgrounds when not in game-over
