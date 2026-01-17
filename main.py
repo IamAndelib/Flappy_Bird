@@ -162,24 +162,28 @@ class Pipe(pygame.sprite.Sprite):
         else:
             self.rect.topleft = [x, y + int(gap / 2)]
         self.move_speed = move_speed
-        self.offset = offset
+        self.phase = offset
         self.freq = freq
-        self.base_y = self.rect.y
+        self.base_y = float(self.rect.y)
         self.float_x = float(self.rect.x)
+        self.float_y = float(self.rect.y)
         self.current_amplitude = 0.0
         self.scored = False
 
     def update(self, dt, scroll_speed):
         self.float_x -= scroll_speed * dt
         self.rect.x = int(self.float_x)
-        if score >= 5:
+        if score >= 20:
             # Gradually increase amplitude for this specific pipe
-            target_amplitude = min((score - 5) * 5 + 10, 50)
+            target_amplitude = min((score - 20) * 5 + 10, 50)
             if self.current_amplitude < target_amplitude:
-                self.current_amplitude += 20 * dt # Ramp up at 20 pixels per second
+                self.current_amplitude += 20 * dt
             
-            # Smooth sine wave movement using the per-pipe ramped amplitude
-            self.rect.y = self.base_y + math.sin(pygame.time.get_ticks() * 0.002 * self.freq + self.offset) * self.current_amplitude
+            # Smoothly advance the sine wave phase using dt
+            self.phase += dt * self.freq * 1.5
+            self.float_y = self.base_y + math.sin(self.phase) * self.current_amplitude
+            self.rect.y = int(self.float_y)
+
         if self.rect.right < 0:
             self.kill()
 
@@ -260,7 +264,7 @@ while run:
         current_pipe_gap = PIPE_GAP - scale * 40
         current_pipe_freq = PIPE_FREQ - scale * 0.6
         current_bg_speed = current_scroll_speed / 4
-        pipe_move_speed = min(0.4 + (score * 0.1), 4.0) if score >= 5 else 0
+        pipe_move_speed = min(0.4 + (score * 0.1), 4.0) if score >= 20 else 0
 
         # Score Tracking
         for p in pipe_group:
